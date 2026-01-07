@@ -143,6 +143,6 @@
 /* Glass Effect */
 .glass {
   background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
+  /* backdrop-filter: blur(10px); */
   border: 1px solid rgba(255, 255, 255, 0.3);
 }
