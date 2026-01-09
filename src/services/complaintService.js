@@ -1,4 +1,5 @@
 // src/services/complaintService.js
+
 import {
   collection, addDoc, getDocs, query, where, orderBy, doc,
   updateDoc, getDoc, onSnapshot, serverTimestamp
@@ -35,7 +36,7 @@ export function subscribeToUserComplaints(userId, callback) {
   );
 }
 
-// Real-time all complaints subscription (for admin)
+// Real-time all complaints subscription (for admin/landlord)
 export function subscribeToAllComplaints(callback) {
   const q = query(
     collection(db, 'complaints'),
@@ -97,7 +98,6 @@ export async function createComplaint(complaintData) {
 }
 
 // Get complaints for a specific user
-
 export async function getUserComplaints(userId) {
   if (!userId) {
     console.error('getUserComplaints: userId is undefined or null');
@@ -116,11 +116,9 @@ export async function getUserComplaints(userId) {
       id: doc.id,
       ...doc.data()
     }));
-
     return complaints;
   } catch (error) {
     console.error('Error fetching user complaints:', error);
-    
     // If index error, fetch without ordering
     if (error.code === 'failed-precondition' || error.message.includes('index')) {
       console.log('Fetching complaints without ordering (index not ready)...');
@@ -134,25 +132,21 @@ export async function getUserComplaints(userId) {
           id: doc.id,
           ...doc.data()
         }));
-        
         // Sort manually
         complaints.sort((a, b) => {
           const aTime = a.createdAt?.seconds || 0;
           const bTime = b.createdAt?.seconds || 0;
           return bTime - aTime;
         });
-        
         return complaints;
       } catch (fallbackError) {
         console.error('Fallback query also failed:', fallbackError);
         return [];
       }
     }
-    
     return [];
   }
 }
-
 
 // Get all complaints (for admin)
 export async function getAllComplaints() {
@@ -161,13 +155,11 @@ export async function getAllComplaints() {
       collection(db, 'complaints'),
       orderBy('createdAt', 'desc')
     );
-
     const snapshot = await getDocs(q);
     const complaints = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-
     return complaints;
   } catch (error) {
     console.error('Error fetching all complaints:', error);
@@ -175,7 +167,7 @@ export async function getAllComplaints() {
   }
 }
 
-// Update complaint status with notification
+// Update complaint status with notification (Admin/Landlord)
 export async function updateComplaintStatus(complaintId, status, adminResponse = null) {
   try {
     const complaintRef = doc(db, 'complaints', complaintId);
@@ -186,6 +178,7 @@ export async function updateComplaintStatus(complaintId, status, adminResponse =
 
     if (adminResponse) {
       updates.adminResponse = adminResponse;
+      updates.adminResponseAt = serverTimestamp();
     }
 
     if (status === 'resolved' || status === 'closed') {
@@ -196,6 +189,33 @@ export async function updateComplaintStatus(complaintId, status, adminResponse =
     return true;
   } catch (error) {
     console.error('Error updating complaint status:', error);
+    throw error;
+  }
+}
+
+// Allow tenant to update complaint status (mark as resolved/reopen)
+export async function tenantUpdateComplaintStatus(complaintId, newStatus, tenantFeedback = null) {
+  try {
+    const complaintRef = doc(db, 'complaints', complaintId);
+    const updates = {
+      status: newStatus,
+      updatedAt: serverTimestamp()
+    };
+
+    if (tenantFeedback) {
+      updates.tenantFeedback = tenantFeedback;
+      updates.tenantFeedbackAt = serverTimestamp();
+    }
+
+    if (newStatus === 'closed') {
+      updates.closedAt = serverTimestamp();
+      updates.closedBy = 'tenant';
+    }
+
+    await updateDoc(complaintRef, updates);
+    return true;
+  } catch (error) {
+    console.error('Error updating complaint status by tenant:', error);
     throw error;
   }
 }
@@ -283,7 +303,7 @@ export async function addComplaintComment(complaintId, comment, userId, userName
   try {
     const complaintRef = doc(db, 'complaints', complaintId);
     const complaintDoc = await getDoc(complaintRef);
-    
+
     if (!complaintDoc.exists()) {
       throw new Error('Complaint not found');
     }

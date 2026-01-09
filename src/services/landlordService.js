@@ -1,17 +1,46 @@
 // src/services/landlordService.js
+
 import {
-  collection, query, where, getDocs, doc, getDoc, addDoc,
-  updateDoc, deleteDoc, serverTimestamp
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
+  where,
+  getDocs,
+  onSnapshot,
+  serverTimestamp,
+  getDoc
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
-// Get all properties owned by landlord (with real-time support)
-export async function getLandlordProperties(landlordId) {
-  if (!landlordId) {
-    console.error('getLandlordProperties: landlordId is undefined');
-    return [];
-  }
+// Subscribe to landlord's properties in real-time
+export function subscribeToLandlordProperties(landlordId, callback) {
+  const propertiesQuery = query(
+    collection(db, 'properties'),
+    where('landlordId', '==', landlordId)
+  );
 
+  return onSnapshot(
+    propertiesQuery,
+    (snapshot) => {
+      const properties = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      properties.sort((a, b) => a.flatNumber.localeCompare(b.flatNumber));
+      callback(properties);
+    },
+    (error) => {
+      console.error('Error in properties subscription:', error);
+      callback([]);
+    }
+  );
+}
+
+// Get landlord's properties
+export async function getLandlordProperties(landlordId) {
   try {
     const propertiesQuery = query(
       collection(db, 'properties'),
@@ -22,51 +51,68 @@ export async function getLandlordProperties(landlordId) {
       id: doc.id,
       ...doc.data()
     }));
-    return properties;
+    return properties.sort((a, b) => a.flatNumber.localeCompare(b.flatNumber));
   } catch (error) {
-    console.error('Error fetching landlord properties:', error);
+    console.error('Error fetching properties:', error);
     return [];
   }
 }
 
 // Add new property
-export async function addProperty(landlordId, propertyData) {
-  if (!landlordId) {
-    throw new Error('Landlord ID is required');
-  }
-
+export async function addProperty(propertyData) {
   try {
-    const newProperty = {
+    const property = {
       ...propertyData,
-      landlordId,
       status: 'vacant',
       tenantId: null,
       tenant: null,
+      tenantEmail: null,
+      tenantPhone: null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
 
-    const docRef = await addDoc(collection(db, 'properties'), newProperty);
-    console.log('✓ Property added with ID:', docRef.id);
-    return { id: docRef.id, ...newProperty };
+    const docRef = await addDoc(collection(db, 'properties'), property);
+    console.log('Property added successfully:', docRef.id);
+    return docRef.id;
   } catch (error) {
     console.error('Error adding property:', error);
-    throw error;
+    throw new Error('Failed to add property');
   }
 }
 
 // Update property
-export async function updateProperty(propertyId, updates) {
+export async function updateProperty(propertyId, propertyData) {
   try {
     const propertyRef = doc(db, 'properties', propertyId);
-    await updateDoc(propertyRef, {
-      ...updates,
+    
+    // Get current property data to preserve tenant info if it exists
+    const propertyDoc = await getDoc(propertyRef);
+    const currentData = propertyDoc.data();
+
+    // Prepare update data - preserve tenant info and status
+    const updateData = {
+      ...propertyData,
       updatedAt: serverTimestamp()
-    });
+    };
+
+    // Don't override tenant info and status during property edit
+    if (currentData.tenant) {
+      updateData.tenant = currentData.tenant;
+      updateData.tenantId = currentData.tenantId;
+      updateData.tenantEmail = currentData.tenantEmail;
+      updateData.tenantPhone = currentData.tenantPhone;
+      updateData.leaseStartDate = currentData.leaseStartDate;
+      updateData.leaseEndDate = currentData.leaseEndDate;
+      updateData.status = currentData.status;
+    }
+
+    await updateDoc(propertyRef, updateData);
+    console.log('Property updated successfully:', propertyId);
     return true;
   } catch (error) {
     console.error('Error updating property:', error);
-    throw error;
+    throw new Error('Failed to update property');
   }
 }
 
@@ -74,213 +120,189 @@ export async function updateProperty(propertyId, updates) {
 export async function deleteProperty(propertyId) {
   try {
     await deleteDoc(doc(db, 'properties', propertyId));
+    console.log('Property deleted successfully:', propertyId);
     return true;
   } catch (error) {
     console.error('Error deleting property:', error);
-    throw error;
+    throw new Error('Failed to delete property');
   }
 }
 
 // Assign tenant to property
-export async function assignTenantToProperty(propertyId, tenantId) {
-  if (!propertyId || !tenantId) {
-    throw new Error('Property ID and Tenant ID are required');
-  }
-
+export async function assignTenant(propertyId, tenantData) {
   try {
-    console.log('Assigning tenant:', tenantId, 'to property:', propertyId);
-
-    // Get tenant details
-    const tenantDoc = await getDoc(doc(db, 'users', tenantId));
-    if (!tenantDoc.exists()) {
-      throw new Error('Tenant not found');
-    }
-
-    const tenantData = tenantDoc.data();
-    console.log('Tenant data:', tenantData);
-
-    // Get property details
-    const propertyDoc = await getDoc(doc(db, 'properties', propertyId));
-    if (!propertyDoc.exists()) {
-      throw new Error('Property not found');
-    }
-
-    const propertyData = propertyDoc.data();
-    console.log('Property data:', propertyData);
-
-    // Update property first
     const propertyRef = doc(db, 'properties', propertyId);
+    
+    // Update property with tenant information
     await updateDoc(propertyRef, {
-      status: 'occupied',
-      tenantId: tenantId,
-      tenant: tenantData.name,
-      tenantEmail: tenantData.email,
-      occupiedAt: serverTimestamp(),
+      tenantId: null, // Set to null since we don't have Firebase user ID
+      tenant: tenantData.tenantName,
+      tenantEmail: tenantData.tenantEmail,
+      tenantPhone: tenantData.tenantPhone,
+      leaseStartDate: tenantData.leaseStartDate,
+      leaseEndDate: tenantData.leaseEndDate,
+      status: 'occupied', // Update status to occupied
+      assignedAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
-    console.log('✓ Property updated');
 
-    // Update tenant's flatNumber
-    const tenantRef = doc(db, 'users', tenantId);
-    await updateDoc(tenantRef, {
-      flatNumber: propertyData.flatNumber,
-      propertyId: propertyId,
-      updatedAt: serverTimestamp()
-    });
-    console.log('✓ Tenant profile updated');
-
+    console.log('Tenant assigned successfully to property:', propertyId);
     return true;
   } catch (error) {
-    console.error('Error in assignTenantToProperty:', error);
-    console.error('Error code:', error.code);
-    console.error('Error message:', error.message);
-    
-    // More specific error messages
-    if (error.code === 'permission-denied') {
-      throw new Error('Permission denied. Please update Firestore security rules.');
-    } else if (error.code === 'not-found') {
-      throw new Error('Property or tenant not found.');
-    } else {
-      throw new Error(error.message || 'Failed to assign tenant');
-    }
+    console.error('Error assigning tenant:', error);
+    throw new Error('Failed to assign tenant to property');
   }
 }
 
 // Remove tenant from property
-export async function removeTenantFromProperty(propertyId) {
+export async function removeTenant(propertyId) {
+  try {
+    const propertyRef = doc(db, 'properties', propertyId);
+    
+    // Remove tenant information and update status
+    await updateDoc(propertyRef, {
+      tenantId: null,
+      tenant: null,
+      tenantEmail: null,
+      tenantPhone: null,
+      leaseStartDate: null,
+      leaseEndDate: null,
+      status: 'vacant', // Update status to vacant
+      assignedAt: null,
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('Tenant removed successfully from property:', propertyId);
+    return true;
+  } catch (error) {
+    console.error('Error removing tenant:', error);
+    throw new Error('Failed to remove tenant from property');
+  }
+}
+
+// Get tenant's property
+export async function getTenantProperty(tenantId) {
+  try {
+    const propertiesQuery = query(
+      collection(db, 'properties'),
+      where('tenantId', '==', tenantId)
+    );
+    const snapshot = await getDocs(propertiesQuery);
+    
+    if (snapshot.empty) {
+      return null;
+    }
+    
+    const propertyDoc = snapshot.docs[0];
+    return {
+      id: propertyDoc.id,
+      ...propertyDoc.data()
+    };
+  } catch (error) {
+    console.error('Error fetching tenant property:', error);
+    return null;
+  }
+}
+
+// Get landlord statistics
+export async function getLandlordStats(landlordId) {
+  try {
+    const properties = await getLandlordProperties(landlordId);
+    
+    const totalProperties = properties.length;
+    const occupiedProperties = properties.filter(p => p.status === 'occupied' || p.tenant).length;
+    const vacantProperties = totalProperties - occupiedProperties;
+    const activeTenants = occupiedProperties;
+    
+    // Calculate revenue
+    const totalRevenue = properties.reduce((sum, p) => {
+      if (p.status === 'occupied' || p.tenant) {
+        return sum + (p.monthlyRent || 0);
+      }
+      return sum;
+    }, 0);
+
+    // Get bills for collection rate (you can implement this based on your bills collection)
+    const collectionRate = 85; // Placeholder - implement actual calculation
+    const pendingBills = 3; // Placeholder
+    const pendingAmount = 45000; // Placeholder
+
+    return {
+      totalProperties,
+      occupiedProperties,
+      vacantProperties,
+      activeTenants,
+      totalRevenue,
+      collectionRate,
+      pendingBills,
+      pendingAmount
+    };
+  } catch (error) {
+    console.error('Error fetching landlord stats:', error);
+    return {
+      totalProperties: 0,
+      occupiedProperties: 0,
+      vacantProperties: 0,
+      activeTenants: 0,
+      totalRevenue: 0,
+      collectionRate: 0,
+      pendingBills: 0,
+      pendingAmount: 0
+    };
+  }
+}
+
+// Get property by ID
+export async function getPropertyById(propertyId) {
   try {
     const propertyRef = doc(db, 'properties', propertyId);
     const propertyDoc = await getDoc(propertyRef);
     
-    if (propertyDoc.exists() && propertyDoc.data().tenantId) {
-      const tenantId = propertyDoc.data().tenantId;
-      
-      // Update tenant
-      const tenantRef = doc(db, 'users', tenantId);
-      await updateDoc(tenantRef, {
-        flatNumber: null,
-        propertyId: null,
-        updatedAt: serverTimestamp()
-      });
+    if (propertyDoc.exists()) {
+      return {
+        id: propertyDoc.id,
+        ...propertyDoc.data()
+      };
     }
-
-    // Update property
-    await updateDoc(propertyRef, {
-      status: 'vacant',
-      tenantId: null,
-      tenant: null,
-      tenantEmail: null,
-      vacatedAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-
-    return true;
+    
+    return null;
   } catch (error) {
-    console.error('Error removing tenant:', error);
-    throw error;
-  }
-}
-
-// Get revenue statistics for landlord
-export async function getLandlordRevenue(landlordId) {
-  if (!landlordId) {
-    console.error('getLandlordRevenue: landlordId is undefined');
+    console.error('Error fetching property:', error);
     return null;
   }
-
-  try {
-    const properties = await getLandlordProperties(landlordId);
-
-    let totalMonthly = 0;
-    let occupied = 0;
-
-    properties.forEach(property => {
-      if (property.status === 'occupied') {
-        occupied++;
-        totalMonthly += property.monthlyRent || 0;
-        totalMonthly += property.maintenanceCharges || 0;
-        totalMonthly += (property.parkingSlots || 0) * 500; // ₹500 per slot
-      }
-    });
-
-    const occupancyRate = properties.length > 0
-      ? Math.round((occupied / properties.length) * 100)
-      : 0;
-
-    return {
-      totalMonthly,
-      occupancyRate,
-      totalProperties: properties.length,
-      occupiedProperties: occupied,
-      vacantProperties: properties.length - occupied
-    };
-  } catch (error) {
-    console.error('Error calculating landlord revenue:', error);
-    return {
-      totalMonthly: 0,
-      occupancyRate: 0,
-      totalProperties: 0,
-      occupiedProperties: 0,
-      vacantProperties: 0
-    };
-  }
 }
 
-// Get tenants for a landlord
-export async function getLandlordTenants(landlordId) {
-  if (!landlordId) {
-    console.error('getLandlordTenants: landlordId is undefined');
-    return [];
-  }
-
+// Get all properties for a society (for admin)
+export async function getAllProperties(societyId) {
   try {
-    const properties = await getLandlordProperties(landlordId);
-    const tenants = [];
-
-    for (const property of properties) {
-      if (property.tenantId && property.status === 'occupied') {
-        try {
-          const tenantDoc = await getDoc(doc(db, 'users', property.tenantId));
-          if (tenantDoc.exists()) {
-            tenants.push({
-              id: property.tenantId,
-              ...tenantDoc.data(),
-              propertyId: property.id,
-              flatNumber: property.flatNumber,
-              rent: property.monthlyRent
-            });
-          }
-        } catch (err) {
-          console.error('Error fetching tenant details:', err);
-        }
-      }
-    }
-
-    return tenants;
-  } catch (error) {
-    console.error('Error fetching landlord tenants:', error);
-    return [];
-  }
-}
-
-// Get payment history for a property
-export async function getPropertyPaymentHistory(propertyId) {
-  try {
-    const paymentsQuery = query(
-      collection(db, 'bills'),
-      where('propertyId', '==', propertyId)
+    const propertiesQuery = query(
+      collection(db, 'properties'),
+      where('societyId', '==', societyId)
     );
-    const snapshot = await getDocs(paymentsQuery);
-    const payments = snapshot.docs.map(doc => ({
+    const snapshot = await getDocs(propertiesQuery);
+    const properties = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-
-    // Sort by date descending
-    payments.sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
-    return payments;
+    return properties.sort((a, b) => a.flatNumber.localeCompare(b.flatNumber));
   } catch (error) {
-    console.error('Error fetching payment history:', error);
+    console.error('Error fetching all properties:', error);
     return [];
+  }
+}
+
+// Update property status
+export async function updatePropertyStatus(propertyId, status) {
+  try {
+    const propertyRef = doc(db, 'properties', propertyId);
+    await updateDoc(propertyRef, {
+      status: status,
+      updatedAt: serverTimestamp()
+    });
+    console.log('Property status updated:', propertyId, status);
+    return true;
+  } catch (error) {
+    console.error('Error updating property status:', error);
+    throw new Error('Failed to update property status');
   }
 }
