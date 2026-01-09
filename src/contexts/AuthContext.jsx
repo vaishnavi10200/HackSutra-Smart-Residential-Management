@@ -1,116 +1,98 @@
 // src/contexts/AuthContext.jsx
+
 import { createContext, useContext, useState, useEffect } from 'react';
-import { 
-  signInWithEmailAndPassword,
+import {
   createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged 
+  onAuthStateChanged
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 
-const AuthContext = createContext();
+const AuthContext = createContext({});
 
-export function useAuth() {
-  return useContext(AuthContext);
-}
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return context;
+};
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // SIGNUP
-  async function signup(email, password, userData) {
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      
-      await setDoc(doc(db, 'users', userCredential.user.uid), {
-        uid: userCredential.user.uid,
-        email: email,
-        name: userData.name,
-        role: userData.role,
-        phone: userData.phone,
-        flatNumber: userData.flatNumber || null,
-        societyId: userData.societyId || 'sunshine_apartments',
-        createdAt: new Date().toISOString()
-      });
-
-      return userCredential.user;
-    } catch (error) {
-      console.error("Signup error:", error);
-      throw error;
-    }
-  }
-
-  // LOGIN
-  async function login(email, password) {
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      return userCredential.user;
-    } catch (error) {
-      console.error("Login error:", error);
-      throw error;
-    }
-  }
-
-  // LOGOUT
-  async function logout() {
-    try {
-      await signOut(auth);
-      setCurrentUser(null);
-      setUserProfile(null);
-    } catch (error) {
-      console.error("Logout error:", error);
-      throw error;
-    }
-  }
-
-  // Listen for auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       console.log('Auth state changed:', user?.email);
       setCurrentUser(user);
-      
+
       if (user) {
         try {
-          const docRef = doc(db, 'users', user.uid);
-          const docSnap = await getDoc(docRef);
-          
-          if (docSnap.exists()) {
-            const profile = { uid: user.uid, ...docSnap.data() };
-            console.log('User profile loaded:', profile);
-            setUserProfile(profile);
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            const profileData = userDoc.data();
+            console.log('User profile loaded:', profileData);
+            setUserProfile(profileData);
           } else {
-            console.error('User profile not found in Firestore');
+            console.log('No user profile found');
             setUserProfile(null);
           }
         } catch (error) {
-          console.error("Error fetching user profile:", error);
+          console.error('Error loading user profile:', error);
           setUserProfile(null);
         }
       } else {
         setUserProfile(null);
       }
-      
+
       setLoading(false);
     });
 
     return unsubscribe;
   }, []);
 
+  const signup = async (email, password, userData) => {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    await setDoc(doc(db, 'users', user.uid), {
+      uid: user.uid,
+      email: user.email,
+      ...userData,
+      createdAt: new Date().toISOString(),
+      updatedAt: serverTimestamp()
+    });
+
+    return userCredential;
+  };
+
+  const login = async (email, password) => {
+    return signInWithEmailAndPassword(auth, email, password);
+  };
+
+  const logout = async () => {
+    setCurrentUser(null);
+    setUserProfile(null);
+    return signOut(auth);
+  };
+
   const value = {
     currentUser,
+    user: currentUser, // Add this alias
     userProfile,
+    loading,
     signup,
     login,
-    logout,
-    loading
+    logout
   };
 
   return (
     <AuthContext.Provider value={value}>
-      {children}
+      {!loading && children}
     </AuthContext.Provider>
   );
 }
