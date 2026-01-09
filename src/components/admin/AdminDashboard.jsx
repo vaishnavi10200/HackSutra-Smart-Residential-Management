@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot, query } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { 
   Users, 
@@ -30,27 +30,28 @@ function AdminDashboard() {
     monthlyRevenue: 0,
     pendingPayments: 0
   });
+  const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Real-time stats subscription
   useEffect(() => {
-    loadStats();
-  }, []);
+    if (!userProfile?.uid) return;
 
-  async function loadStats() {
-    try {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const billsSnap = await getDocs(collection(db, 'bills'));
-      const complaintsSnap = await getDocs(collection(db, 'complaints'));
-      
-      const resolved = complaintsSnap.docs.filter(
-        doc => doc.data().status === 'resolved'
-      ).length;
+    const unsubscribers = [];
 
-      // Calculate revenue from bills
+    // Subscribe to users count
+    const usersUnsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      setStats(prev => ({ ...prev, totalUsers: snapshot.size }));
+    });
+    unsubscribers.push(usersUnsub);
+
+    // Subscribe to bills with revenue calculation
+    const billsUnsub = onSnapshot(collection(db, 'bills'), (snapshot) => {
       let revenue = 0;
       let pending = 0;
-      billsSnap.docs.forEach(doc => {
+      
+      snapshot.docs.forEach(doc => {
         const bill = doc.data();
         if (bill.status === 'paid') {
           revenue += bill.total || 0;
@@ -59,29 +60,51 @@ function AdminDashboard() {
         }
       });
 
-      setStats({
-        totalUsers: usersSnap.size,
-        totalBills: billsSnap.size,
-        totalComplaints: complaintsSnap.size,
-        resolvedComplaints: resolved,
+      setStats(prev => ({
+        ...prev,
+        totalBills: snapshot.size,
         monthlyRevenue: revenue,
         pendingPayments: pending
-      });
-    } catch (error) {
-      console.error('Error loading stats:', error);
-      // Set demo data
-      setStats({
-        totalUsers: 45,
-        totalBills: 156,
-        totalComplaints: 23,
-        resolvedComplaints: 18,
-        monthlyRevenue: 850000,
-        pendingPayments: 125000
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
+      }));
+    });
+    unsubscribers.push(billsUnsub);
+
+    // Subscribe to complaints
+    const complaintsUnsub = onSnapshot(collection(db, 'complaints'), (snapshot) => {
+      const resolved = snapshot.docs.filter(
+        doc => doc.data().status === 'resolved'
+      ).length;
+
+      setStats(prev => ({
+        ...prev,
+        totalComplaints: snapshot.size,
+        resolvedComplaints: resolved
+      }));
+      
+      // Update recent activity from complaints
+      const recent = snapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          type: 'complaint',
+          ...doc.data()
+        }))
+        .sort((a, b) => {
+          const aTime = a.createdAt?.seconds || 0;
+          const bTime = b.createdAt?.seconds || 0;
+          return bTime - aTime;
+        })
+        .slice(0, 5);
+      
+      setRecentActivity(recent);
+    });
+    unsubscribers.push(complaintsUnsub);
+
+    setLoading(false);
+
+    return () => {
+      unsubscribers.forEach(unsub => unsub());
+    };
+  }, [userProfile]);
 
   async function handleLogout() {
     try {
@@ -153,7 +176,7 @@ function AdminDashboard() {
 
         {/* Dashboard Content */}
         <div className="px-4 py-8 sm:px-6 lg:px-8">
-          {/* Stats Grid */}
+          {/* Stats Grid - Real-time */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatsCard
               title="Total Residents"
@@ -180,7 +203,7 @@ function AdminDashboard() {
             />
             <StatsCard
               title="Resolution Rate"
-              value={`${Math.round((stats.resolvedComplaints / stats.totalComplaints) * 100)}%`}
+              value={`${stats.totalComplaints > 0 ? Math.round((stats.resolvedComplaints / stats.totalComplaints) * 100) : 0}%`}
               icon={CheckCircle}
               color="purple"
               trend="+5%"
@@ -188,7 +211,7 @@ function AdminDashboard() {
             />
           </div>
 
-          {/* Revenue Cards */}
+          {/* Revenue Cards - Real-time */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <div className="bg-gradient-to-br from-green-500 to-green-700 rounded-2xl shadow-xl p-8 text-white">
               <div className="flex items-center justify-between mb-4">
@@ -204,7 +227,7 @@ function AdminDashboard() {
               </div>
               <div className="flex items-center text-green-100">
                 <TrendingUp className="w-4 h-4 mr-2" />
-                <span className="text-sm">+15% from last month</span>
+                <span className="text-sm">Live updates</span>
               </div>
             </div>
 
@@ -221,50 +244,39 @@ function AdminDashboard() {
                 </div>
               </div>
               <p className="text-orange-100 text-sm">
-                {Math.round((stats.pendingPayments / (stats.monthlyRevenue + stats.pendingPayments)) * 100)}% of total
+                {stats.monthlyRevenue + stats.pendingPayments > 0 
+                  ? Math.round((stats.pendingPayments / (stats.monthlyRevenue + stats.pendingPayments)) * 100) 
+                  : 0}% of total
               </p>
             </div>
           </div>
 
           {/* Recent Activity & Quick Actions */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Recent Activity */}
+            {/* Recent Activity - Real-time */}
             <div className="lg:col-span-2 card">
               <div className="card-header flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
-                <button className="text-sm text-primary-600 hover:text-primary-700 font-medium">
-                  View All
-                </button>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-xs text-gray-500">Live</span>
+                </div>
               </div>
               <div className="space-y-4">
-                <ActivityItem
-                  icon={FileText}
-                  color="green"
-                  title="New bill generated"
-                  description="Monthly bills for January 2026"
-                  time="2 hours ago"
-                />
-                <ActivityItem
-                  icon={AlertCircle}
-                  color="orange"
-                  title="Complaint received"
-                  description="Plumbing issue in Flat 302"
-                  time="5 hours ago"
-                />
-                <ActivityItem
-                  icon={CheckCircle}
-                  color="blue"
-                  title="Complaint resolved"
-                  description="Electrical work in Flat 405"
-                  time="Yesterday"
-                />
-                <ActivityItem
-                  icon={Users}
-                  color="purple"
-                  title="New tenant registered"
-                  description="Amit Shah - Flat 507"
-                  time="2 days ago"
-                />
+                {recentActivity.length > 0 ? (
+                  recentActivity.map((activity) => (
+                    <ActivityItem
+                      key={activity.id}
+                      icon={AlertCircle}
+                      color="orange"
+                      title={`New complaint: ${activity.title}`}
+                      description={`${activity.userName} - ${activity.category}`}
+                      time={formatTime(activity.createdAt)}
+                    />
+                  ))
+                ) : (
+                  <p className="text-gray-500 text-center py-8">No recent activity</p>
+                )}
               </div>
             </div>
 
@@ -313,6 +325,25 @@ function AdminDashboard() {
       </div>
     </div>
   );
+}
+
+function formatTime(timestamp) {
+  if (!timestamp) return 'Just now';
+  
+  const date = timestamp.seconds 
+    ? new Date(timestamp.seconds * 1000)
+    : new Date(timestamp);
+  
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} min ago`;
+  if (diffHours < 24) return `${diffHours} hours ago`;
+  return `${diffDays} days ago`;
 }
 
 function AdminSidebar({ userProfile, onLogout }) {
