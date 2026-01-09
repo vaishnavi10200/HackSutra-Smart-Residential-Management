@@ -12,9 +12,9 @@ import {
   Trash2
 } from 'lucide-react';
 import { 
-  getParkingSlots, 
+  subscribeToParkingSlots,
+  subscribeToUserBookings,
   bookVisitorParking, 
-  getUserParkingBookings,
   cancelParkingBooking 
 } from '../../services/parkingService';
 import Alert from '../common/Alert';
@@ -35,33 +35,26 @@ function ParkingManagement() {
   });
   const [alert, setAlert] = useState({ show: false, type: '', message: '' });
 
+  // Real-time subscriptions
   useEffect(() => {
-    if (userProfile?.uid) {
-      loadParkingData();
-    }
-  }, [userProfile]);
+    if (!userProfile?.uid) return;
 
-  async function loadParkingData() {
-    if (!userProfile?.uid) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const [slots, bookings] = await Promise.all([
-        getParkingSlots(),
-        getUserParkingBookings(userProfile.uid)
-      ]);
+    // Subscribe to parking slots (real-time updates)
+    const unsubscribeSlots = subscribeToParkingSlots((slots) => {
       setParkingSlots(slots);
-      setUserBookings(bookings);
-    } catch (error) {
-      console.error('Error loading parking data:', error);
-      showAlert('error', 'Failed to load parking data');
-    } finally {
       setLoading(false);
-    }
-  }
+    });
+
+    // Subscribe to user bookings (real-time updates)
+    const unsubscribeBookings = subscribeToUserBookings(userProfile.uid, (bookings) => {
+      setUserBookings(bookings);
+    });
+
+    return () => {
+      unsubscribeSlots();
+      unsubscribeBookings();
+    };
+  }, [userProfile]);
 
   function showAlert(type, message) {
     setAlert({ show: true, type, message });
@@ -84,7 +77,7 @@ function ParkingManagement() {
         flatNumber: userProfile.flatNumber
       });
       
-      showAlert('success', 'Visitor parking booked successfully!');
+      showAlert('success', 'Visitor parking booked successfully! 🎉');
       setShowBookingForm(false);
       setBookingData({
         visitorName: '',
@@ -93,7 +86,6 @@ function ParkingManagement() {
         startTime: '',
         endTime: ''
       });
-      loadParkingData();
     } catch (error) {
       showAlert('error', error.message || 'Failed to book parking');
     }
@@ -105,7 +97,6 @@ function ParkingManagement() {
     try {
       await cancelParkingBooking(bookingId);
       showAlert('success', 'Booking cancelled successfully');
-      loadParkingData();
     } catch (error) {
       showAlert('error', 'Failed to cancel booking');
     }
@@ -369,9 +360,9 @@ function ParkingManagement() {
         )}
       </div>
 
-      {/* Parking Grid Visualization */}
+      {/* Parking Grid Visualization - REAL-TIME UPDATES */}
       <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Parking Layout</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Parking Layout (Live)</h3>
         <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
           {parkingSlots.slice(0, 50).map((slot) => (
             <div
@@ -385,7 +376,7 @@ function ParkingManagement() {
               } ${slot.assignedTo === userProfile.uid ? 'ring-2 ring-blue-500' : ''}`}
               title={`${slot.slotNumber} - ${slot.status}`}
             >
-              {slot.slotNumber}
+              {slot.slotNumber.split('-')[1]}
             </div>
           ))}
         </div>

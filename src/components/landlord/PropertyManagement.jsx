@@ -1,11 +1,12 @@
 // src/components/landlord/PropertyManagement.jsx
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { onSnapshot, collection, query, where } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 import { 
   Building, Plus, Edit, Trash2, Users, CheckCircle, XCircle 
 } from 'lucide-react';
 import {
-  getLandlordProperties,
   addProperty,
   updateProperty,
   deleteProperty,
@@ -29,31 +30,40 @@ function PropertyManagement() {
     monthlyRent: '',
     maintenanceCharges: '',
     parkingSlots: 1,
-    waterCharges: 5, // per unit
-    electricityCharges: 8, // per unit
+    waterCharges: 5,
+    electricityCharges: 8,
     deposit: '',
     amenities: []
   });
 
+  // Real-time properties subscription
   useEffect(() => {
-    if (userProfile?.uid) {
-      loadProperties();
-      loadAvailableTenants();
-    }
+    if (!userProfile?.uid) return;
+
+    const propertiesQuery = query(
+      collection(db, 'properties'),
+      where('landlordId', '==', userProfile.uid)
+    );
+
+    const unsubscribe = onSnapshot(propertiesQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setProperties(data);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error in properties subscription:', error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, [userProfile]);
 
-  async function loadProperties() {
-    try {
-      setLoading(true);
-      const data = await getLandlordProperties(userProfile.uid);
-      setProperties(data);
-    } catch (error) {
-      console.error('Error loading properties:', error);
-      showAlert('error', 'Failed to load properties');
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Load available tenants
+  useEffect(() => {
+    loadAvailableTenants();
+  }, []);
 
   async function loadAvailableTenants() {
     try {
@@ -101,7 +111,6 @@ function PropertyManagement() {
         deposit: '',
         amenities: []
       });
-      loadProperties();
     } catch (error) {
       showAlert('error', error.message || 'Failed to add property');
     }
@@ -112,9 +121,20 @@ function PropertyManagement() {
       await assignTenantToProperty(propertyId, tenantId);
       showAlert('success', 'Tenant assigned successfully!');
       setShowTenantAssign(null);
-      loadProperties();
+      loadAvailableTenants(); // Reload to update available tenants
     } catch (error) {
-      showAlert('error', 'Failed to assign tenant');
+      showAlert('error', error.message || 'Failed to assign tenant');
+    }
+  }
+
+  async function handleDeleteProperty(propertyId) {
+    if (!confirm('Are you sure you want to delete this property?')) return;
+    
+    try {
+      await deleteProperty(propertyId);
+      showAlert('success', 'Property deleted successfully');
+    } catch (error) {
+      showAlert('error', 'Failed to delete property');
     }
   }
 
@@ -130,7 +150,13 @@ function PropertyManagement() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-3xl font-bold text-gray-900">Property Management</h2>
-          <p className="text-gray-600 mt-2">Add and manage your rental properties</p>
+          <p className="text-gray-600 mt-2 flex items-center">
+            Add and manage your rental properties
+            <span className="ml-2 flex items-center text-green-600 text-sm">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-1"></span>
+              Live sync
+            </span>
+          </p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
@@ -143,7 +169,7 @@ function PropertyManagement() {
 
       {/* Add Property Form */}
       {showForm && (
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-8 animate-scale-in">
           <h3 className="text-xl font-bold text-gray-900 mb-4">New Property Details</h3>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -285,7 +311,7 @@ function PropertyManagement() {
         </div>
       )}
 
-      {/* Properties List */}
+      {/* Properties List - Real-time updates */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {properties.map(property => (
           <div key={property.id} className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition">
@@ -294,13 +320,22 @@ function PropertyManagement() {
                 <h3 className="text-xl font-bold text-gray-900">Flat {property.flatNumber}</h3>
                 <p className="text-sm text-gray-500">{property.building}</p>
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                property.status === 'occupied' 
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-gray-100 text-gray-800'
-              }`}>
-                {property.status || 'vacant'}
-              </span>
+              <div className="flex items-center space-x-2">
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                  property.status === 'occupied' 
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-gray-100 text-gray-800'
+                }`}>
+                  {property.status || 'vacant'}
+                </span>
+                <button
+                  onClick={() => handleDeleteProperty(property.id)}
+                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                  title="Delete property"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2 mb-4">
@@ -336,7 +371,7 @@ function PropertyManagement() {
 
             {/* Tenant Assignment Dropdown */}
             {showTenantAssign === property.id && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg animate-scale-in">
                 <p className="text-sm font-medium text-gray-700 mb-2">Select Tenant:</p>
                 <select
                   onChange={(e) => handleAssignTenant(property.id, e.target.value)}
@@ -349,6 +384,12 @@ function PropertyManagement() {
                     </option>
                   ))}
                 </select>
+                <button
+                  onClick={() => setShowTenantAssign(null)}
+                  className="mt-2 w-full text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Cancel
+                </button>
               </div>
             )}
           </div>

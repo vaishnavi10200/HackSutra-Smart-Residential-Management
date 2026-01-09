@@ -5,7 +5,8 @@ const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 
 export async function generateBillWithAI(rentalData) {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    // Updated model name
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const prompt = `
 You are an expert billing assistant for residential properties in India. Calculate the monthly bill accurately.
@@ -102,7 +103,8 @@ Return ONLY a valid JSON object (no markdown, no extra text):
 
 export async function categorizeComplaint(complaintData) {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    // Updated model name
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const prompt = `
 You are a maintenance categorization assistant. Analyze this complaint:

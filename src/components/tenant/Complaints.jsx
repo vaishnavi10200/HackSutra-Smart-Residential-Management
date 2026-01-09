@@ -8,12 +8,12 @@ import {
   CheckCircle,
   XCircle,
   MessageSquare,
-  Camera
+  Camera,
+  Loader
 } from 'lucide-react';
 import { 
   createComplaint, 
-  getUserComplaints,
-  updateComplaintStatus
+  subscribeToUserComplaints
 } from '../../services/complaintService';
 import { COMPLAINT_CATEGORIES, PRIORITY_COLORS, STATUS_COLORS } from '../../utils/constants';
 import Alert from '../common/Alert';
@@ -33,29 +33,26 @@ function Complaints() {
   const [alert, setAlert] = useState({ show: false, type: '', message: '' });
   const [submitting, setSubmitting] = useState(false);
 
+  // Real-time subscription to user complaints
   useEffect(() => {
-    if (userProfile?.uid) {
-      loadComplaints();
-    }
-  }, [userProfile]);
-
-  async function loadComplaints() {
     if (!userProfile?.uid) {
       setLoading(false);
       return;
     }
 
-    try {
-      setLoading(true);
-      const data = await getUserComplaints(userProfile.uid);
-      setComplaints(data);
-    } catch (error) {
-      console.error('Error loading complaints:', error);
-      showAlert('error', 'Failed to load complaints');
-    } finally {
+    console.log('Setting up real-time complaints subscription for user:', userProfile.uid);
+
+    const unsubscribe = subscribeToUserComplaints(userProfile.uid, (complaintsData) => {
+      console.log('Received real-time complaints update:', complaintsData.length, 'complaints');
+      setComplaints(complaintsData);
       setLoading(false);
-    }
-  }
+    });
+
+    return () => {
+      console.log('Cleaning up complaints subscription');
+      unsubscribe();
+    };
+  }, [userProfile]);
 
   function showAlert(type, message) {
     setAlert({ show: true, type, message });
@@ -79,10 +76,9 @@ function Complaints() {
         flatNumber: userProfile.flatNumber
       });
       
-      showAlert('success', 'Complaint submitted successfully!');
+      showAlert('success', 'Complaint submitted successfully! 🎉 Our AI has categorized and prioritized your complaint.');
       setShowForm(false);
       setFormData({ category: '', title: '', description: '', location: '' });
-      loadComplaints();
     } catch (error) {
       showAlert('error', error.message || 'Failed to submit complaint');
     } finally {
@@ -103,7 +99,13 @@ function Complaints() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Complaints & Requests</h1>
-          <p className="text-gray-600">Report issues and track their resolution</p>
+          <p className="text-gray-600 flex items-center">
+            Report issues and track their resolution
+            <span className="ml-2 flex items-center text-green-600 text-sm">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-1"></span>
+              Live updates
+            </span>
+          </p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
@@ -122,7 +124,7 @@ function Complaints() {
         />
       )}
 
-      {/* Stats */}
+      {/* Stats - Real-time */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="card">
           <div className="flex items-center justify-between">
@@ -226,11 +228,25 @@ function Complaints() {
               />
             </div>
 
+            {/* AI Info Banner */}
+            <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <MessageSquare className="w-5 h-5 text-purple-600 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-purple-900">AI-Powered Processing</p>
+                  <p className="text-xs text-purple-700 mt-1">
+                    Our AI will automatically categorize your complaint, assign priority, and estimate resolution time.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="flex space-x-3">
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
                 className="btn btn-secondary flex-1"
+                disabled={submitting}
               >
                 Cancel
               </button>
@@ -241,7 +257,7 @@ function Complaints() {
               >
                 {submitting ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                    <Loader className="w-4 h-4 animate-spin mr-2" />
                     Submitting...
                   </>
                 ) : (
@@ -259,7 +275,7 @@ function Complaints() {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Active Complaints</h2>
           <div className="space-y-3">
             {activeComplaints.map((complaint) => (
-              <ComplaintCard key={complaint.id} complaint={complaint} />
+              <ComplaintCard key={complaint.id} complaint={complaint} userProfile={userProfile} />
             ))}
           </div>
         </div>
@@ -271,7 +287,7 @@ function Complaints() {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Resolved Complaints</h2>
           <div className="space-y-3">
             {resolvedComplaints.map((complaint) => (
-              <ComplaintCard key={complaint.id} complaint={complaint} />
+              <ComplaintCard key={complaint.id} complaint={complaint} userProfile={userProfile} />
             ))}
           </div>
         </div>
@@ -291,25 +307,65 @@ function Complaints() {
   );
 }
 
-function ComplaintCard({ complaint }) {
+function ComplaintCard({ complaint, userProfile }) {
   const category = COMPLAINT_CATEGORIES.find(c => c.value === complaint.category);
   const statusColor = STATUS_COLORS[complaint.status] || 'bg-gray-100 text-gray-800';
   const priorityColor = PRIORITY_COLORS[complaint.priority] || 'bg-gray-100 text-gray-800';
 
+  const formatDate = (dateValue) => {
+    if (!dateValue) return 'N/A';
+    
+    // Handle Firestore Timestamp
+    if (dateValue.seconds) {
+      return new Date(dateValue.seconds * 1000).toLocaleDateString('en-IN');
+    }
+    
+    // Handle ISO string or Date object
+    return new Date(dateValue).toLocaleDateString('en-IN');
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'resolved':
+      case 'closed':
+        return <CheckCircle className="w-5 h-5 text-green-600" />;
+      case 'in-progress':
+        return <Clock className="w-5 h-5 text-blue-600" />;
+      case 'open':
+      default:
+        return <AlertCircle className="w-5 h-5 text-orange-600" />;
+    }
+  };
+
   return (
-    <div className="card hover:shadow-hover cursor-pointer">
+    <div className="card hover:shadow-hover cursor-pointer transition-all">
       <div className="flex items-start justify-between mb-3">
-        <div className="flex items-start space-x-3">
-          <div className="bg-orange-100 p-2 rounded-lg">
-            <AlertCircle className="w-5 h-5 text-orange-600" />
+        <div className="flex items-start space-x-3 flex-1">
+          <div className={`p-2 rounded-lg ${
+            complaint.status === 'resolved' || complaint.status === 'closed' 
+              ? 'bg-green-100' 
+              : complaint.status === 'in-progress'
+              ? 'bg-blue-100'
+              : 'bg-orange-100'
+          }`}>
+            {getStatusIcon(complaint.status)}
           </div>
-          <div>
+          <div className="flex-1">
             <h4 className="font-semibold text-gray-900">
               {category?.icon} {complaint.title}
             </h4>
             <p className="text-sm text-gray-600 mt-1">{complaint.description}</p>
             {complaint.location && (
               <p className="text-xs text-gray-500 mt-1">📍 {complaint.location}</p>
+            )}
+            {complaint.estimatedTime && (
+              <p className="text-xs text-blue-600 mt-1">⏱️ Estimated: {complaint.estimatedTime}</p>
+            )}
+            {complaint.suggestedAction && (
+              <p className="text-xs text-purple-600 mt-1 italic">💡 {complaint.suggestedAction}</p>
+            )}
+            {complaint.assignTo && (
+              <p className="text-xs text-gray-500 mt-1">👷 Assigned to: {complaint.assignTo}</p>
             )}
           </div>
         </div>
@@ -325,18 +381,36 @@ function ComplaintCard({ complaint }) {
           </span>
         </div>
         <div className="text-xs text-gray-500">
-          {new Date(complaint.createdAt).toLocaleDateString()}
+          {formatDate(complaint.createdAt)}
         </div>
       </div>
 
       {complaint.adminResponse && (
-        <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+        <div className="mt-3 p-3 bg-blue-50 rounded-lg animate-scale-in">
           <div className="flex items-start space-x-2">
-            <MessageSquare className="w-4 h-4 text-blue-600 mt-0.5" />
+            <MessageSquare className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
               <p className="text-xs font-medium text-blue-900 mb-1">Admin Response</p>
               <p className="text-sm text-blue-800">{complaint.adminResponse}</p>
+              {complaint.updatedAt && (
+                <p className="text-xs text-blue-600 mt-1">
+                  Updated: {formatDate(complaint.updatedAt)}
+                </p>
+              )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Progress Indicator for In-Progress Complaints */}
+      {complaint.status === 'in-progress' && (
+        <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+          <div className="flex items-center space-x-2 mb-2">
+            <Loader className="w-4 h-4 text-blue-600 animate-spin" />
+            <p className="text-sm font-medium text-blue-900">Work in Progress</p>
+          </div>
+          <div className="w-full bg-blue-200 rounded-full h-2">
+            <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
           </div>
         </div>
       )}
