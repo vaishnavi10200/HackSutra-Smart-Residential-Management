@@ -4,11 +4,10 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import { Receipt, Sparkles, Send, Loader, AlertTriangle, CheckCircle, X } from 'lucide-react';
+import { Receipt, Sparkles, Send, Loader, AlertTriangle, CheckCircle, X, RefreshCw } from 'lucide-react';
 import { getLandlordProperties } from '../../services/landlordService';
 import { generateMonthlyBillForProperty } from '../../services/billingService';
 import Alert from '../common/Alert';
-
 
 // Permission Diagnostic Component
 function PermissionDiagnostic({ userProfile, currentUser }) {
@@ -98,7 +97,6 @@ function PermissionDiagnostic({ userProfile, currentUser }) {
   }
 
   const allPassed = diagnosticInfo?.checks.every(c => c.status.includes('✅'));
-  const hasFails = diagnosticInfo?.checks.some(c => c.status.includes('❌'));
 
   return (
     <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-6 mb-6">
@@ -156,6 +154,7 @@ export default function BillGeneration() {
   const [properties, setProperties] = useState([]);
   const [selectedProperty, setSelectedProperty] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [alert, setAlert] = useState(null);
   const [generatedBill, setGeneratedBill] = useState(null);
@@ -191,6 +190,25 @@ export default function BillGeneration() {
     }
   }
 
+  // ✅ NEW: Manual refresh function
+  async function handleRefresh() {
+    setRefreshing(true);
+    setAlert(null);
+    try {
+      const props = await getLandlordProperties(user.uid);
+      setProperties(props);
+      setAlert({ 
+        type: 'success', 
+        message: 'Properties refreshed successfully!' 
+      });
+    } catch (error) {
+      console.error('Error refreshing properties:', error);
+      setAlert({ type: 'error', message: 'Failed to refresh properties' });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   const handleGenerateBill = async (e) => {
     e.preventDefault();
     setGenerating(true);
@@ -203,8 +221,13 @@ export default function BillGeneration() {
         throw new Error('Please select a property');
       }
 
-      if (!property.tenantId) {
-        throw new Error('This property does not have a tenant assigned');
+      // ✅ IMPROVED: Better tenant validation message
+      if (!property.tenant || property.status !== 'occupied') {
+        throw new Error(
+          'This property does not have a tenant assigned. ' +
+          'Please go to Property Management and assign a tenant first, ' +
+          'then click the Refresh button above to reload the properties.'
+        );
       }
 
       const billData = {
@@ -267,16 +290,16 @@ export default function BillGeneration() {
     }, 2000);
   };
 
- if (loading) {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-green-50">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading...</p>
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-green-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   const selectedPropertyData = properties.find(p => p.id === selectedProperty);
 
@@ -292,14 +315,27 @@ export default function BillGeneration() {
 
       <div className="max-w-6xl mx-auto">
         <div className="bg-white rounded-2xl shadow-2xl p-8 mb-8">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 bg-gradient-to-br from-green-500 to-blue-500 rounded-xl">
-              <Receipt className="w-8 h-8 text-white" />
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gradient-to-br from-green-500 to-blue-500 rounded-xl">
+                <Receipt className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-800">AI Bill Generation</h1>
+                <p className="text-gray-600">Generate accurate bills using Google Gemini AI</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-800">AI Bill Generation</h1>
-              <p className="text-gray-600">Generate accurate bills using Google Gemini AI</p>
-            </div>
+
+            {/* ✅ NEW: Refresh Button */}
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
+              title="Refresh properties list"
+            >
+              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
           </div>
 
           {/* AI Feature Card */}
@@ -346,7 +382,8 @@ export default function BillGeneration() {
                   <option value="">Choose a property...</option>
                   {properties.map(prop => (
                     <option key={prop.id} value={prop.id}>
-                      {prop.flatNumber} - {prop.tenant || 'No Tenant'} - ₹{prop.monthlyRent}/month
+                      {prop.flatNumber} - {prop.tenant || 'No Tenant'} 
+                      {prop.status === 'occupied' ? ' ✓' : ' (Vacant)'} - ₹{prop.monthlyRent}/month
                     </option>
                   ))}
                 </select>
@@ -354,13 +391,30 @@ export default function BillGeneration() {
 
               {/* Show property details if selected */}
               {selectedPropertyData && (
-                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                  <h3 className="font-bold text-gray-800 mb-3">Property Details</h3>
+                <div className={`rounded-lg p-4 space-y-2 ${
+                  selectedPropertyData.status === 'occupied' 
+                    ? 'bg-green-50 border-2 border-green-200' 
+                    : 'bg-yellow-50 border-2 border-yellow-300'
+                }`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-gray-800">Property Details</h3>
+                    {selectedPropertyData.status !== 'occupied' && (
+                      <span className="px-3 py-1 bg-yellow-500 text-white text-xs font-bold rounded-full">
+                        NO TENANT
+                      </span>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-gray-600">Tenant:</span>
                       <span className="ml-2 font-medium text-gray-900">
                         {selectedPropertyData.tenant || 'N/A'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Status:</span>
+                      <span className="ml-2 font-medium text-gray-900">
+                        {selectedPropertyData.status || 'vacant'}
                       </span>
                     </div>
                     <div>
@@ -382,6 +436,13 @@ export default function BillGeneration() {
                       </span>
                     </div>
                   </div>
+                  {selectedPropertyData.status !== 'occupied' && (
+                    <div className="mt-3 p-3 bg-yellow-100 rounded-lg">
+                      <p className="text-sm text-yellow-800 font-medium">
+                        ⚠️ Assign a tenant in Property Management first, then click Refresh above.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 

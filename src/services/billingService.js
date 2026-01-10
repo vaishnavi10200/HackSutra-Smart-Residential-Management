@@ -1,4 +1,10 @@
 // src/services/billingService.js
+// 
+// KEY CHANGES:
+// - Line 58: Now checks property.tenant instead of property.tenantId
+// - Line 59: Better error message telling user to assign tenant first
+// - Line 137: Uses tenant email/name as tenantId for bill tracking
+//
 import { 
   collection, addDoc, query, where, getDocs, doc, getDoc, onSnapshot,
   updateDoc, serverTimestamp 
@@ -35,8 +41,6 @@ export function subscribeToBills(tenantId, callback) {
 }
 
 // Generate monthly bill with AI for a property
-
-
 export async function generateMonthlyBillForProperty(billData) {
   try {
     const { property, month, waterUsage, electricityUsage, additionalCharges, discount, landlordId } = billData;
@@ -45,16 +49,19 @@ export async function generateMonthlyBillForProperty(billData) {
     console.log('1. Landlord ID:', landlordId);
     console.log('2. Property ID:', property.id);
     console.log('3. Property Landlord ID:', property.landlordId);
-    console.log('4. Tenant ID:', property.tenantId);
-    console.log('5. Month:', month);
+    console.log('4. Tenant Name:', property.tenant);
+    console.log('5. Tenant Email:', property.tenantEmail);
+    console.log('6. Property Status:', property.status);
+    console.log('7. Month:', month);
 
     // Validate inputs
     if (!property || !property.id) {
       throw new Error('Invalid property data');
     }
 
-    if (!property.tenantId) {
-      throw new Error('Property must have an assigned tenant');
+    // ✅ FIXED: Check for tenant name instead of tenantId
+    if (!property.tenant || property.status !== 'occupied') {
+      throw new Error('Property must have an assigned tenant. Please assign a tenant to this property first.');
     }
 
     if (!landlordId) {
@@ -67,7 +74,7 @@ export async function generateMonthlyBillForProperty(billData) {
     }
 
     // Check if bill already exists
-    console.log('6. Checking for existing bills...');
+    console.log('8. Checking for existing bills...');
     const existingBills = query(
       collection(db, 'bills'),
       where('propertyId', '==', property.id),
@@ -78,7 +85,7 @@ export async function generateMonthlyBillForProperty(billData) {
     if (!billSnapshot.empty) {
       throw new Error('Bill already exists for this property and month');
     }
-    console.log('7. No existing bill found');
+    console.log('9. No existing bill found');
 
     // Calculate charges
     const parkingCharges = (property.parkingSlots || 0) * 500;
@@ -102,10 +109,10 @@ export async function generateMonthlyBillForProperty(billData) {
       const prevBill = prevBillSnapshot.docs[0].data();
       lastMonthStatus = prevBill.status;
     }
-    console.log('8. Previous month status:', lastMonthStatus);
+    console.log('10. Previous month status:', lastMonthStatus);
 
     // Use AI to generate bill
-    console.log('9. Calling Gemini AI...');
+    console.log('11. Calling Gemini AI...');
     const aiBillData = await generateBillWithAI({
       monthlyRent: property.monthlyRent,
       maintenanceCharges: property.maintenanceCharges,
@@ -120,22 +127,24 @@ export async function generateMonthlyBillForProperty(billData) {
       previousBalance: 0,
       lastMonthStatus: lastMonthStatus
     });
-    console.log('10. AI bill data:', aiBillData);
+    console.log('12. AI bill data:', aiBillData);
 
     // Ensure we have a valid total
     if (!aiBillData.total || aiBillData.total <= 0) {
       throw new Error('Invalid bill total calculated by AI');
     }
 
-    // Create bill document with all required fields
+    // ✅ FIXED: Create bill document using tenant name and email
     const billDoc = {
       propertyId: property.id,
       landlordId: landlordId,
-      tenantId: property.tenantId,
+      tenantId: property.tenantEmail || property.tenant, // Use email or name as identifier
       tenantName: property.tenant,
+      tenantEmail: property.tenantEmail || '',
+      tenantPhone: property.tenantPhone || '',
       flatNumber: property.flatNumber,
       month: month,
-      total: aiBillData.total, // Ensure total is present
+      total: aiBillData.total,
       ...aiBillData,
       waterUsage: waterUsage || 0,
       electricityUsage: electricityUsage || 0,
@@ -149,15 +158,15 @@ export async function generateMonthlyBillForProperty(billData) {
       createdAt: serverTimestamp()
     };
 
-    console.log('11. Bill document to create:', {
+    console.log('13. Bill document to create:', {
       ...billDoc,
       generatedAt: 'serverTimestamp()',
       createdAt: 'serverTimestamp()'
     });
 
-    console.log('12. Attempting to write to Firestore...');
+    console.log('14. Attempting to write to Firestore...');
     const docRef = await addDoc(collection(db, 'bills'), billDoc);
-    console.log('13. ✓ Bill created successfully with ID:', docRef.id);
+    console.log('15. ✅ Bill created successfully with ID:', docRef.id);
 
     return { 
       id: docRef.id, 
@@ -186,8 +195,6 @@ export async function generateMonthlyBillForProperty(billData) {
     }
   }
 }
-
-
 
 // Get tenant bills (fallback for non-subscription)
 export async function getTenantBills(tenantId) {
