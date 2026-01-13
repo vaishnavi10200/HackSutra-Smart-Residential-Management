@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="./public/SocietyHub_Logo.png" alt="SocietyHub Logo" width="120"/>
+<img src="./public/SocietyHub_Logo.png" alt="SocietyHub Logo" width="300"/>
 
 **Making 10,000+ Lives Better with Google AI**
 
@@ -117,7 +117,7 @@ SocietyHub leverages **Google's cutting-edge AI** to:
 <td valign="top" width="50%">
 
 ### Backend & AI
-- **Google Gemini 1.5 Flash** - AI bill generation & complaint analysis
+- **Google Gemini 2.5 Flash** - AI bill generation & complaint analysis
 - **Firebase Cloud Firestore** - Real-time NoSQL database
 - **Firebase Authentication** - User management
 - **Firebase Hosting** - Static hosting & CDN
@@ -252,8 +252,12 @@ Try the platform immediately with these test accounts:
 4. Handle complaints with priority-based workflow
 5. Configure society settings
 
-### [📹 Watch Video Tutorial](https://drive.google.com/file/d/1udLI0ASVpT9K9E_AiY5BokWFFoF2qcR3/view?usp=drive_link)
-*[![alt text](public/Video_image.png)]*
+### 📹 Watch Video Tutorial
+[Click here to watch the video](https://drive.google.com/file/d/1udLI0ASVpT9K9E_AiY5BokWFFoF2qcR3/view?usp=drive_link)
+
+<p align="center">
+  <img src="./public/Video_image.png" alt="Video Preview" width="400"/>
+</p>
 
 ---
 
@@ -261,7 +265,12 @@ Try the platform immediately with these test accounts:
 
 ### System Architecture
 
-[![System Architecture](./public/Project_Architecture.png)](./public/Project_Architecture.png)
+<p align="center">
+  <a href="./public/Project_Architecture.png">
+    <img src="./public/Project_Architecture.png" alt="System Architecture" width="750"/>
+  </a>
+</p>
+
 
 
 ### Real-Time Data Flow
@@ -350,7 +359,7 @@ return () => unsubscribe();
 ---
 
 ### AI Bill Generation
-<img src="./docs/screenshots/bill-generation.png" alt="AI Bill Generation" width="700"/>
+<img src="./public/BillGeneration.png" alt="AI Bill Generation" width="700"/>
 
 *Gemini AI generates accurate bills in 3 seconds*
 
@@ -361,7 +370,7 @@ return () => unsubscribe();
 
 <p>
   <img src="./public/Parking_Form.png" alt="Parking Form" width="250"/>
-  <img src="./public/Parking_Booking.png" alt="Parking Booking" width="250"/>
+  <img src="./public/Parking_Booking.png" alt="Parking Booking" width="320"/>
 </p>
 
 *Color-coded parking availability updates in real-time*
@@ -369,9 +378,9 @@ return () => unsubscribe();
 ---
 
 ### Smart Complaints
-<p>
-  <img src="./public/Complaint_Form.png" alt="Complaint Form" width="300"/>
-  <img src="./public/Complaint_Resolve.png" alt="Complaint Resolution" width="300"/>
+<p style="display:flex; align-items:center; gap:16px;">
+  <img src="./public/Complaint_Form.png" alt="Complaint Form" height="350"/>
+  <img src="./public/Complaint_Resolve.png" alt="Complaint Resolution" height="350"/>
 </p>
 
 *Categorized complaints with priority and estimated resolution time*
@@ -438,7 +447,7 @@ Contributions make the open-source community an amazing place to learn, inspire,
 
 ## 📞 Contact
 
-<img src="./public/SheLeads_Logo.png" alt="SheLeads Logo" width="120"/>
+<img src="./public/SheLeads_Logo.png" alt="SheLeads Logo" width="320"/>
 
 **Team Name:** SheLeads
 
@@ -446,8 +455,8 @@ Contributions make the open-source community an amazing place to learn, inspire,
 **Project Lead:** [Prerana Hippargi]
 **Project Member:** [Vaishnavi Saudagar]
 - Email: preranahippargi7105@gmail.com / vaishnavi03saudagar@gmail.com
-- LinkedIn: [Your LinkedIn](https://www.linkedin.com/in/prerana-hippargi-27756b321/) 
-            [Your LinkedIn](https://www.linkedin.com/in/vaishnavi-saudagar-a2115228b/)
+- LinkedIn: [Prerana Hippargi](https://www.linkedin.com/in/prerana-hippargi-27756b321/) 
+            [Vaishnavi Saudagar](https://www.linkedin.com/in/vaishnavi-saudagar-a2115228b/)
 - GitHub: [@preranah7](https://github.com/preranah7)
           [@vaishnavi10200](https://github.com/vaishnavi10200)
           
@@ -473,14 +482,6 @@ Special thanks to:
 
 ---
 
-## 📊 Project Stats
-
-![GitHub stars](https://img.shields.io/github/stars/preranah7/HackSutra-Smart-Residential-Management?style=social)
-![GitHub forks](https://img.shields.io/github/forks/preranah7/HackSutra-Smart-Residential-Management?style=social)
-![GitHub watchers](https://img.shields.io/github/watchers/preranah7/HackSutra-Smart-Residential-Management?style=social)
-
----
-
 ## 🌟 Star Us!
 
 If you find this project useful, please consider giving it a ⭐ on GitHub!
@@ -489,7 +490,7 @@ If you find this project useful, please consider giving it a ⭐ on GitHub!
 
 <div align="center">
 
-**Made with ❤️ and ☕ by [SheLeads]**
+**Made with ❤️ by SheLeads**
 
 **Powered by Google Technologies**
 
