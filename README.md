@@ -2,12 +2,11 @@
 
 <div align="center">
 
-![SocietyHub Logo](./public/SocietyHub_Logo.png)
+<img src="./public/SocietyHub_Logo.png" alt="SocietyHub Logo" width="120"/>
 
 **Making 10,000+ Lives Better with Google AI**
 
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://societyhub-app.web.app)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Firebase](https://img.shields.io/badge/Firebase-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com)
 [![Google Gemini](https://img.shields.io/badge/Google%20Gemini-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
