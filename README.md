@@ -369,7 +369,7 @@ return () => unsubscribe();
 
 <p>
   <img src="./public/Parking_Form.png" alt="Parking Form" width="250"/>
-  <img src="./public/Parking_Booking.png" alt="Parking Booking" width="700" height="550"/>
+  <img src="./public/Parking_Booking.png" alt="Parking Booking" width="550" height="550"/>
 </p>
 
 *Color-coded parking availability updates in real-time*
